@@ -7,14 +7,18 @@
 #include <moai-core/MOAIGlobals.h>
 #include <moai-core/MOAILua.h>
 
-#define MOAI_LUA_SETUP(type,str)										\
-	MOAILuaState state ( L );											\
-	type* self = MOAILogMgr::Get ().LuaSetup < type >( state, str );	\
+#define MOAI_LUA_SETUP(type,str)												\
+	MOAILuaState state ( L );													\
+	type* self = MOAILogMgr::Get ().LuaSetup < type >( state, str );			\
 	if ( !self ) return 0;
 
-#define MOAI_LUA_SETUP_SINGLE(type,str)										\
-	MOAILuaState state ( L );												\
-	type* self = MOAILogMgr::Get ().LuaSetupSingle < type >( state, str );	\
+#define MOAI_LUA_SETUP_CLASS(str)												\
+	MOAILuaState state ( L );													\
+	if ( !MOAILogMgr::Get ().LuaSetupClass ( state, str )) return 0;
+
+#define MOAI_LUA_SETUP_SINGLE(type,str)											\
+	MOAILuaState state ( L );													\
+	type* self = MOAILogMgr::Get ().LuaSetupSingle < type >( state, str );		\
 	if ( !self ) return 0;
 
 //================================================================//
@@ -35,11 +39,11 @@ class MOAILogMessage {
 /**	@lua	MOAILogMgr
 	@text	Singleton for managing debug log messages and log level.
 
-	@const LOG_NONE
-	@const LOG_ERROR
-	@const LOG_WARNING
-	@const LOG_STATUS
-	@const LOG_DEBUG
+	@const LOG_NONE		No logging
+	@const LOG_ERROR	Error level
+	@const LOG_WARNING	Warning level
+	@const LOG_STATUS	Status level
+	@const LOG_DEBUG	Debug level
 */
 class MOAILogMgr :
 	public MOAIGlobalClass < MOAILogMgr, MOAILuaObject > {
@@ -80,6 +84,7 @@ public:
 	void			CloseFile				();
 	void			Log						( lua_State *L, u32 messageID, ... );
 	void			LogVar					( lua_State *L, u32 messageID, va_list args );
+	bool			LuaSetupClass			( MOAILuaState& state, cc8* typeStr );
 					MOAILogMgr				();
 					~MOAILogMgr				();
 	void			OpenFile				( cc8* filename );

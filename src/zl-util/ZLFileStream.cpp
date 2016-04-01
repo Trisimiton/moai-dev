@@ -49,6 +49,12 @@ size_t ZLFileStream::GetLength () {
 }
 
 //----------------------------------------------------------------//
+bool ZLFileStream::IsOpen () {
+
+	return this->mFile != NULL;
+}
+
+//----------------------------------------------------------------//
 bool ZLFileStream::Open ( cc8* filename, u32 mode ) {
 
 	this->Close ();
@@ -148,6 +154,12 @@ size_t ZLFileStream::ReadBytes ( void* buffer, size_t size ) {
 int ZLFileStream::SetCursor ( long offset ) {
 
 	return zl_fseek ( this->mFile, offset, SEEK_SET );
+}
+
+//----------------------------------------------------------------//
+size_t ZLFileStream::SetLength ( size_t length ) {
+	UNUSED ( length );
+	return 0;
 }
 
 //----------------------------------------------------------------//

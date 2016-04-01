@@ -783,21 +783,24 @@ void MOAIGfxDevice::SetBlendMode ( const MOAIBlendMode& blendMode ) {
 		this->Flush ();
 		zglEnable ( ZGL_PIPELINE_BLEND );
 		this->mBlendMode = blendMode;
+		zglBlendMode(this->mBlendMode.mEquation);
 		zglBlendFunc ( this->mBlendMode.mSourceFactor, this->mBlendMode.mDestFactor );
 		this->mBlendEnabled = true;
 	}
 	else if ( !this->mBlendMode.IsSame ( blendMode )) {
 		this->Flush ();
 		this->mBlendMode = blendMode;
+		zglBlendMode(this->mBlendMode.mEquation);
 		zglBlendFunc ( this->mBlendMode.mSourceFactor, this->mBlendMode.mDestFactor );
 	}
 }
 
 //----------------------------------------------------------------//
-void MOAIGfxDevice::SetBlendMode ( int srcFactor, int dstFactor ) {
+void MOAIGfxDevice::SetBlendMode ( int srcFactor, int dstFactor, int equation ) {
 
 	MOAIBlendMode blendMode;
 	blendMode.SetBlend ( srcFactor, dstFactor );
+	blendMode.SetBlendEquation( equation );
 	
 	this->SetBlendMode ( blendMode );
 }
@@ -1222,7 +1225,13 @@ void MOAIGfxDevice::SetVertexMtxMode ( u32 input, u32 output ) {
 //----------------------------------------------------------------//
 void MOAIGfxDevice::SetVertexPreset ( u32 preset ) {
 
-	this->SetVertexFormat ( MOAIVertexFormatMgr::Get ().GetFormat ( preset ));
+	MOAIVertexFormat* format = MOAIVertexFormatMgr::Get ().GetFormat ( preset );
+	if ( format ) {
+		this->SetVertexFormat ( *format );
+	}
+	else {
+		this->SetVertexFormat ();
+	}
 }
 
 //----------------------------------------------------------------//
@@ -1282,7 +1291,7 @@ void MOAIGfxDevice::SetViewRect () {
 //----------------------------------------------------------------//
 void MOAIGfxDevice::SetViewRect ( ZLRect rect ) {
 
-	ZLRect deviceRect = rect;
+	ZLRect deviceRect;
 	
 	deviceRect = this->mFrameBuffer->WndRectToDevice ( rect );
 	

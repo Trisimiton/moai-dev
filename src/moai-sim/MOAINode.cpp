@@ -169,6 +169,15 @@ int MOAINode::_getAttrLink ( lua_State* L ) {
 }
 
 //----------------------------------------------------------------//
+// TODO: doxygen
+int MOAINode::_getNodeState ( lua_State* L ) {
+	MOAI_LUA_SETUP ( MOAINode, "U" );
+
+	state.Push ( self->mState );
+	return 1;
+}
+
+//----------------------------------------------------------------//
 /**	@lua	moveAttr
 	@text	Animate the attribute by applying a delta. Creates and returns
 			a MOAIEaseDriver initialized to apply the delta.
@@ -197,7 +206,7 @@ int MOAINode::_moveAttr ( lua_State* L ) {
 	
 		action->SetLink ( 0, self, attrID, value, mode );
 		action->SetSpan ( length );
-		action->Start ( MOAISim::Get ().GetActionMgr ());
+		action->Start ( MOAISim::Get ().GetActionMgr (), false );
 		action->PushLuaUserdata ( state );
 
 		return 1;
@@ -257,7 +266,7 @@ int MOAINode::_seekAttr ( lua_State* L ) {
 		action->SetLink ( 0, self, attrID, value - getter.GetValue ( 0.0f ), mode );
 		
 		action->SetSpan ( delay );
-		action->Start ( MOAISim::Get ().GetActionMgr ());
+		action->Start ( MOAISim::Get ().GetActionMgr (), false );
 		action->PushLuaUserdata ( state );
 
 		return 1;
@@ -380,6 +389,7 @@ void MOAINode::ActivateOnLink ( MOAINode& srcNode ) {
 			srcNode.Activate ( *this );
 		}
 		else {
+		
 			MOAINodeMgr& depNodeMgr = MOAINodeMgr::Get ();
 			
 			if ( srcNode.IsNodeUpstream ( this ) && this->mState != STATE_UPDATING ) {
@@ -464,8 +474,9 @@ void MOAINode::DepNodeUpdate () {
 		InvokeListenerWithSelf ( EVENT_NODE_PRE_UPDATE );
 		this->OnDepNodeUpdate ();
 		InvokeListenerWithSelf ( EVENT_NODE_POST_UPDATE );
+		
+		this->mState = STATE_ACTIVE;
 	}
-	this->mState = STATE_ACTIVE;
 }
 
 //----------------------------------------------------------------//
@@ -615,6 +626,7 @@ void MOAINode::RegisterLuaFuncs ( MOAILuaState& state ) {
 		{ "forceUpdate",			_forceUpdate },
 		{ "getAttr",				_getAttr },
 		{ "getAttrLink",			_getAttrLink },
+		{ "getNodeState",			_getNodeState },
 		{ "moveAttr",				_moveAttr },
 		{ "scheduleUpdate",			_scheduleUpdate },
 		{ "seekAttr",				_seekAttr },
@@ -666,16 +678,21 @@ void MOAINode::RemoveDepLink ( MOAIDepLink& link ) {
 //----------------------------------------------------------------//
 void MOAINode::ScheduleUpdate () {
 	
-	if ( MOAINodeMgr::IsValid () ) {
+	MOAINodeMgr& nodeMgr = MOAINodeMgr::Get ();
 	
+	if ( nodeMgr.IsValid ()) {
+	
+		nodeMgr.mScheduled = true;
+		
 		if (( this->mState == STATE_IDLE ) || ( this->mState == STATE_ACTIVE )) {
 		
 			// add to the list if not already in it
 			if ( this->mState == STATE_IDLE ) {
+			
 				this->mState = STATE_SCHEDULED;
 
 				// push us at the end of the list
-				MOAINodeMgr::Get ().PushBack ( *this );
+				nodeMgr.PushBack ( *this );
 				
 				// activate source nodes
 				MOAIDepLink* link = this->mPullLinks;
@@ -683,8 +700,9 @@ void MOAINode::ScheduleUpdate () {
 					link->mSourceNode->Activate ( *this );
 				}
 			}
+			
 			this->mState = STATE_SCHEDULED;
-
+			
 			this->ExtendUpdate ();
 		}
 	}

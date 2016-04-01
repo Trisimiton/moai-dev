@@ -97,22 +97,20 @@ tess:pushCombo ()
 	tess:pushPoly ( 25, -25, -25, -25, -25, 25, 25, 25 )
 tess:finish ()
 
-tess:finish ()
-
 -- yank a mesh out of the tess
 
-local vtxBuffer = MOAIVertexBuffer.new ()
-local idxBuffer = MOAIIndexBuffer.new ()
+local vtxBuffer = MOAIGfxBuffer.new ()
+local idxBuffer = MOAIGfxBuffer.new ()
 
-tess:getTriangles ( vtxBuffer, idxBuffer );
-
-vtxBuffer:setFormat ( vtxFormat )
-vtxBuffer:bless ()
+local totalElements = tess:tesselate ( vtxBuffer, idxBuffer, 2, vtxFormat )
 
 local mesh = MOAIMesh.new ()
-mesh:setVertexBuffer ( vtxBuffer )
-mesh:setIndexBuffer ( idxBuffer )
+mesh:setVertexBuffer ( vtxBuffer, vtxFormat )
+mesh:setIndexBuffer ( idxBuffer, 2 )
+mesh:setPrimType ( MOAIMesh.GL_TRIANGLES )
 mesh:setShader ( shader )
+mesh:setTotalElements ( totalElements )
+mesh:setBounds ( vtxBuffer:computeBounds ( vtxFormat ))
 
 local prop = MOAIProp.new ()
 prop:setDeck ( mesh )

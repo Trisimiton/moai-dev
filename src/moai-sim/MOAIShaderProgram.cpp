@@ -38,9 +38,8 @@ int MOAIShaderProgram::_clearUniform ( lua_State* L ) {
 	@in		MOAIShaderProgram self
 	@in		number idx
 	@in		string name
-	@opt	number type		One of MOAIShaderProgram.UNIFORM_COLOR, MOAIShaderProgram.UNIFORM_FLOAT, MOAIShaderProgram.UNIFORM_INT,
-							MOAIShaderProgram.UNIFORM_TRANSFORM, MOAIShaderProgram.UNIFORM_PEN_COLOR, MOAIShaderProgram.UNIFORM_VIEW_PROJ,
-							MOAIShaderProgram.UNIFORM_WORLD, MOAIShaderProgram.UNIFORM_WORLD_VIEW, MOAIShaderProgram.UNIFORM_NORMAL, MOAIShaderProgram.UNIFORM_WORLD_VIEW_PROJ
+	@opt	number type		One of MOAIShaderProgram.UNIFORM_FLOAT, MOAIShaderProgram.UNIFORM_INDEX, MOAIShaderProgram.UNIFORM_INT,
+							MOAIShaderProgram.UNIFORM_MATRIX_F3, MOAIShaderProgram.UNIFORM_MATRIX_F4, MOAIShaderProgram.UNIFORM_VECTOR_F4
 	@out	nil
 */
 int MOAIShaderProgram::_declareUniform ( lua_State* L ) {
@@ -274,6 +273,10 @@ void MOAIShaderProgram::DeclareUniform ( u32 idx, cc8* name, u32 type ) {
 		MOAIShaderUniform& uniform = this->mUniforms [ idx ];
 		uniform.mName = name;
 		uniform.SetType ( type );
+		
+		MOAIShaderUniformBuffer& uniformDefault = this->mUniformDefaults [ idx ];
+		uniformDefault.SetType ( type );
+		uniformDefault.Default ();
 	}
 }
 
@@ -282,7 +285,7 @@ void MOAIShaderProgram::DeclareUniform ( u32 idx, cc8* name, u32 type, float val
 
 	if ( idx < this->mUniforms.Size ()) {
 		this->DeclareUniform ( idx, name, type );
-		this->mUniforms [ idx ].SetValue ( value );
+		this->mUniformDefaults [ idx ].SetValue ( value );
 	}
 }
 
@@ -291,7 +294,7 @@ void MOAIShaderProgram::DeclareUniform ( u32 idx, cc8* name, u32 type, int value
 
 	if ( idx < this->mUniforms.Size ()) {
 		this->DeclareUniform ( idx, name, type );
-		this->mUniforms [ idx ].SetValue ( value );
+		this->mUniformDefaults [ idx ].SetValue ( value );
 	}
 }
 
@@ -388,6 +391,7 @@ bool MOAIShaderProgram::OnGPUCreate () {
 
 		if ( uniform.mType != MOAIShaderUniform::UNIFORM_NONE ) {
 			uniform.mAddr = zglGetUniformLocation ( this->mProgram, uniform.mName );
+			uniform.ClearValue ();
 		}
 	}
 
@@ -474,9 +478,10 @@ void MOAIShaderProgram::RegisterLuaClass ( MOAILuaState& state ) {
 	state.SetField ( -1, "GLOBAL_VIEW_WIDTH",					( u32 )GLOBAL_VIEW_WIDTH );
 	state.SetField ( -1, "GLOBAL_VIEW_HEIGHT",					( u32 )GLOBAL_VIEW_HEIGHT );
 	state.SetField ( -1, "GLOBAL_WORLD",						( u32 )GLOBAL_WORLD );
+	state.SetField ( -1, "GLOBAL_WORLD_INVERSE",				( u32 )GLOBAL_WORLD_INVERSE );
 	state.SetField ( -1, "GLOBAL_WORLD_VIEW",					( u32 )GLOBAL_WORLD_VIEW );
+	state.SetField ( -1, "GLOBAL_WORLD_VIEW_INVERSE",			( u32 )GLOBAL_WORLD_VIEW_INVERSE );
 	state.SetField ( -1, "GLOBAL_WORLD_VIEW_PROJ",				( u32 )GLOBAL_WORLD_VIEW_PROJ );
-	state.SetField ( -1, "GLOBAL_WORLD_VIEW_PROJ_NORM",			( u32 )GLOBAL_WORLD_VIEW_PROJ_NORM );
 }
 
 //----------------------------------------------------------------//
@@ -510,6 +515,7 @@ void MOAIShaderProgram::ReserveGlobals ( u32 nGlobals ) {
 void MOAIShaderProgram::ReserveUniforms ( u32 nUniforms ) {
 
 	this->mUniforms.Init ( nUniforms );
+	this->mUniformDefaults.Init ( nUniforms );
 }
 
 //----------------------------------------------------------------//
@@ -525,7 +531,7 @@ void MOAIShaderProgram::SetSource ( cc8* vshSource, cc8* fshSource ) {
 	if ( vshSource && fshSource ) {
 		this->mVertexShaderSource = vshSource;
 		this->mFragmentShaderSource = fshSource;
-		this->DoCPUAffirm ();
+		this->FinishInit ();
 	}
 }
 
@@ -548,6 +554,9 @@ void MOAIShaderProgram::UpdateGlobals () {
 
 	// TODO: all these need to be cached in the gfx state instead of recomputed every single time
 	// TODO: should check against the cached values in the shader to see if the uniforms need to be re-uploaded
+
+	// NOTE: matrices are submitted transposed; it is up to the shader to transform vertices correctly
+	// vert * matrix implicitely transposes the matrix; martix * vert uses the matrix as submitted
 
 	for ( u32 i = 0; i < this->mGlobals.Size (); ++i ) {
 	
@@ -602,10 +611,31 @@ void MOAIShaderProgram::UpdateGlobals () {
 				}
 				break;
 			}
+			case GLOBAL_WORLD_INVERSE: {
+			
+				ZLMatrix4x4 mtx = world;
+				mtx.Inverse ();
+				
+				if ( uniform.SetValue ( mtx, true )) {
+					uniform.Bind ();
+				}
+				break;
+			}
 			case GLOBAL_WORLD_VIEW: {
 			
 				ZLMatrix4x4 mtx = world;
 				mtx.Append ( view );
+				
+				if ( uniform.SetValue ( mtx, true )) {
+					uniform.Bind ();
+				}
+				break;
+			}
+			case GLOBAL_WORLD_VIEW_INVERSE: {
+			
+				ZLMatrix4x4 mtx = world;
+				mtx.Append ( view );
+				mtx.Inverse ();
 				
 				if ( uniform.SetValue ( mtx, true )) {
 					uniform.Bind ();
@@ -619,21 +649,6 @@ void MOAIShaderProgram::UpdateGlobals () {
 				mtx.Append ( proj );
 				
 				if ( uniform.SetValue ( mtx, true )) {
-					uniform.Bind ();
-				}
-				break;
-			}
-			case GLOBAL_WORLD_VIEW_PROJ_NORM: {
-			
-				ZLMatrix4x4 mtx = world;
-				mtx.Append ( view );
-				mtx.Append ( proj );
-
-				ZLMatrix3x3 finalMtx;
-				finalMtx.Init ( mtx );
-				finalMtx.Inverse ( finalMtx );
-				
-				if ( uniform.SetValue ( finalMtx, true )) {
 					uniform.Bind ();
 				}
 				break;

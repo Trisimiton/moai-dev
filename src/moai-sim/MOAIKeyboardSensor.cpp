@@ -3,13 +3,14 @@
 
 #include "pch.h"
 #include <moai-sim/MOAIKeyboardSensor.h>
-#include <moai-sim/MOAIInputQueue.h>
+#include <moai-sim/MOAIInputMgr.h>
 #include <contrib/moai_utf8.h>
 
 namespace KeyboardEventType {
 	enum {
 		KEY,
 		CHAR,
+		EDIT,
 		INVALID
 	};
 }
@@ -106,6 +107,24 @@ int MOAIKeyboardSensor::_setCharCallback ( lua_State* L ) {
 }
 
 //----------------------------------------------------------------//
+/**	@lua	setEditCallback
+	@text	Sets or clears the callback to be issued when a character is editing.
+ 
+	@in		MOAIKeyboardSensor self
+	@opt	function callback			A callback function with the signature "void callback(string text, number start, number length)".
+										Note that for non-ASCII characters, the string argument will be a multibyte UTF-8 character.
+										Default value is nil.
+	@out	nil
+ */
+int MOAIKeyboardSensor::_setEditCallback ( lua_State* L ) {
+	MOAI_LUA_SETUP ( MOAIKeyboardSensor, "U" )
+	
+	self->mOnEdit.SetRef ( state, 2 );
+	
+	return 0;
+}
+
+//----------------------------------------------------------------//
 /**	@lua	setKeyCallback
 	@text	Sets or clears the callback to be issued when a key is pressed or released.
 
@@ -127,24 +146,65 @@ int MOAIKeyboardSensor::_setKeyCallback ( lua_State* L ) {
 //================================================================//
 
 //----------------------------------------------------------------//
-void MOAIKeyboardSensor::EnqueueKeyboardCharEvent ( MOAIInputQueue& queue, u8 deviceID, u8 sensorID, u32 unicodeChar ) {
+void MOAIKeyboardSensor::ClearState () {
+
+	// Clear the DOWN and UP flags
+	for ( u32 i = 0; i < this->mClearCount; ++i ) {
+		u32 keyCode = this->mClearQueue [ i ];
+		this->mState [ keyCode ] = 0;
+	}
+	this->mClearCount = 0;
+}
+
+//----------------------------------------------------------------//
+void MOAIKeyboardSensor::EnqueueKeyboardCharEvent ( u8 deviceID, u8 sensorID, u32 unicodeChar ) {
+
 	// Don't allow non-printable characters
 	if ( unicodeChar < ' ' ) return;
 
-	if ( queue.WriteEventHeader < MOAIKeyboardSensor >( deviceID, sensorID )) {
-		queue.Write < u32 >( KeyboardEventType::CHAR );
-		queue.Write < u32 >( unicodeChar );
+	MOAIInputMgr& inputMgr = MOAIInputMgr::Get ();
+	if ( inputMgr.WriteEventHeader < MOAIKeyboardSensor >( deviceID, sensorID )) {
+		inputMgr.Write < u32 >( KeyboardEventType::CHAR );
+		inputMgr.Write < u32 >( unicodeChar );
 	}
 }
 
 //----------------------------------------------------------------//
-void MOAIKeyboardSensor::EnqueueKeyboardKeyEvent ( MOAIInputQueue& queue, u8 deviceID, u8 sensorID, u32 keyID, bool down ) {
-	if (keyID >= MOAIKeyCodes::TOTAL) return;
+void MOAIKeyboardSensor::EnqueueKeyboardEditEvent ( u8 deviceID, u8 sensorID, char const* text, u32 start, u32 editLength, u32 maxLength ) {
+	
+	MOAIInputMgr& inputMgr = MOAIInputMgr::Get ();
+	if ( inputMgr.WriteEventHeader < MOAIKeyboardSensor >( deviceID, sensorID )) {
+		inputMgr.Write < u32 >( KeyboardEventType::EDIT );
+		inputMgr.Write < u32 >( start );
+		inputMgr.Write < u32 >( editLength );
+		inputMgr.Write < u32 >( maxLength );
+		
+		for ( u32 i = 0; i < maxLength; i++ ) {
+			inputMgr.Write < char >( text[i] );
+		}
+	}
+}
 
-	if ( queue.WriteEventHeader < MOAIKeyboardSensor >( deviceID, sensorID )) {
-		queue.Write < u32 >( KeyboardEventType::KEY );
-		queue.Write < u32 >( keyID );
-		queue.Write < bool >( down );
+//----------------------------------------------------------------//
+void MOAIKeyboardSensor::EnqueueKeyboardKeyEvent ( u8 deviceID, u8 sensorID, u32 keyID, bool down ) {
+
+	if ( keyID >= MOAI_KEY_TOTAL ) return;
+
+	MOAIInputMgr& inputMgr = MOAIInputMgr::Get ();
+	if ( inputMgr.WriteEventHeader < MOAIKeyboardSensor >( deviceID, sensorID )) {
+		inputMgr.Write < u32 >( KeyboardEventType::KEY );
+		inputMgr.Write < u32 >( keyID );
+		inputMgr.Write < bool >( down );
+	}
+}
+
+//----------------------------------------------------------------//
+void MOAIKeyboardSensor::EnqueueKeyboardTextEvent ( u8 deviceID, u8 sensorID, cc8* text ) {
+	
+	int i = 0;
+	while ( text [ i ]) {
+		u_int32_t uc = moai_u8_nextchar ( text, &i );
+		MOAIKeyboardSensor::EnqueueKeyboardCharEvent ( deviceID, sensorID, uc );
 	}
 }
 
@@ -215,7 +275,7 @@ MOAIKeyboardSensor::MOAIKeyboardSensor () :
 	
 	RTTI_SINGLE ( MOAISensor )
 	
-	memset ( this->mState, 0, MOAIKeyCodes::TOTAL * sizeof ( u32 ));
+	memset ( this->mState, 0, MOAI_KEY_TOTAL * sizeof ( u32 ));
 }
 
 //----------------------------------------------------------------//
@@ -271,6 +331,26 @@ void MOAIKeyboardSensor::ParseEvent ( ZLStream& eventStream ) {
 				state.DebugCall ( 1, 0 );
 			}
 		}
+	} else if ( eventType == KeyboardEventType::EDIT ) {
+		
+		u32 start = eventStream.Read < u32 >( 0 );
+		u32 editLength = eventStream.Read < u32 >( 0 );
+		u32 maxLength = eventStream.Read < u32 >( 0 );
+		
+		if ( this->mOnEdit ) {
+			char *text = (char*)malloc(maxLength);
+			eventStream.ReadBytes(text, ( size_t )maxLength);
+			
+			MOAIScopedLuaState state = this->mOnEdit.GetSelf ();
+			lua_pushstring ( state, text );
+			lua_pushnumber ( state, start );
+			lua_pushnumber ( state, editLength );
+			state.DebugCall ( 3, 0 );
+			
+			free(text);
+		} else {
+			eventStream.SetCursor(eventStream.GetCursor() + maxLength);
+		}
 	}
 }
 
@@ -292,6 +372,7 @@ void MOAIKeyboardSensor::RegisterLuaFuncs ( MOAILuaState& state ) {
 		{ "keyUp",					_keyUp },
 		{ "setCallback",			_setCallback },
 		{ "setCharCallback",		_setCharCallback },
+		{ "setEditCallback",		_setEditCallback },
 		{ "setKeyCallback",			_setKeyCallback },
 		{ NULL, NULL }
 	};
@@ -300,7 +381,8 @@ void MOAIKeyboardSensor::RegisterLuaFuncs ( MOAILuaState& state ) {
 }
 
 //----------------------------------------------------------------//
-void MOAIKeyboardSensor::Reset () {
+void MOAIKeyboardSensor::ResetState () {
+
 	// Clear the DOWN and UP flags
 	for ( u32 i = 0; i < this->mClearCount; ++i ) {
 		u32 keyCode = this->mClearQueue [ i ];

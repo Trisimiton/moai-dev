@@ -6,6 +6,7 @@
 #include <moai-sim/MOAIEaseDriver.h>
 #include <moai-sim/MOAIGfxDevice.h>
 #include <moai-sim/MOAIShader.h>
+#include <moai-sim/MOAIShaderMgr.h>
 #include <moai-sim/MOAITransformBase.h>
 
 //================================================================//
@@ -25,6 +26,20 @@ int MOAIShader::_setProgram ( lua_State* L ) {
 //================================================================//
 // MOAIShader
 //================================================================//
+
+//----------------------------------------------------------------//
+MOAIShader* MOAIShader::AffirmShader ( MOAILuaState& state, int idx ) {
+
+	MOAIShader* shader = 0;
+
+	if ( state.IsType ( idx, LUA_TNUMBER )) {
+		shader = MOAIShaderMgr::Get ().GetShader ( state.GetValue < u32 >( idx, MOAIShaderMgr::UNKNOWN_SHADER ));
+	}
+	else {
+		shader = state.GetLuaObject < MOAIShader >( 2, true );
+	}
+	return shader;
+}
 
 //----------------------------------------------------------------//
 bool MOAIShader::ApplyAttrOp ( u32 attrID, MOAIAttrOp& attrOp, u32 op ) {
@@ -67,9 +82,12 @@ void MOAIShader::BindUniforms () {
 		
 		for ( u32 i = 0; i < nUniforms; ++i ) {
 			MOAIShaderUniform& uniform = program->mUniforms [ i ];
-			if ( uniform.SetValue ( this->mUniformBuffers [ i ], true )) {
-				gfxDevice.Flush ();
-				uniform.Bind ();
+			
+			if ( uniform.IsValid ()) {
+				if ( uniform.SetValue ( this->mUniformBuffers [ i ], true )) {
+					gfxDevice.Flush ();
+					uniform.Bind ();
+				}
 			}
 		}
 	}
@@ -119,29 +137,11 @@ void MOAIShader::SetProgram ( MOAIShaderProgram* program ) {
 		this->mUniformBuffers.Init ( nUniforms );
 		
 		for ( u32 i = 0; i < nUniforms; ++i ) {
-		
 			u32 type = program->mUniforms [ i ].GetType ();
 			MOAIShaderUniformBuffer& uniformBuffer = this->mUniformBuffers [ i ];
 			uniformBuffer.SetType ( program->mUniforms [ i ].GetType ());
+			uniformBuffer.SetValue ( program->mUniformDefaults [ i ], false );
 			
-			switch ( type ) {
-				case MOAIShaderUniformBuffer::UNIFORM_INDEX: {
-					uniformBuffer.SetValue ( 1 );
-					break;
-				}
-				case MOAIShaderUniformBuffer::UNIFORM_MATRIX_F3: {
-					ZLMatrix3x3 mtx;
-					mtx.Ident ();
-					uniformBuffer.SetValue ( mtx, false );
-					break;
-				}
-				case MOAIShaderUniformBuffer::UNIFORM_MATRIX_F4: {
-					ZLMatrix4x4 mtx;
-					mtx.Ident ();
-					uniformBuffer.SetValue ( mtx, false );
-					break;
-				}
-			}
 		}
 	}
 }

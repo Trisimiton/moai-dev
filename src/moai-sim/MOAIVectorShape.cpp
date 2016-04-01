@@ -18,7 +18,7 @@ int MOAIVectorShape::AddFillContours ( SafeTesselator* tess ) {
 }
 
 //----------------------------------------------------------------//
-int MOAIVectorShape::AddStrokeContours ( SafeTesselator* tess ) {
+int MOAIVectorShape::AddStrokeContours ( SafeTesselator* tess, bool inside, bool outside ) {
 
 	int error = 0;
 	
@@ -53,15 +53,19 @@ int MOAIVectorShape::AddStrokeContours ( SafeTesselator* tess ) {
 	
 	SafeTesselator stroke;
 	
-	this->StrokeBoundaries ( &exterior, &outline, exteriorWidth, true, false );
-	error = exterior.Tesselate ( TESS_WINDING_NONZERO, TESS_BOUNDARY_CONTOURS, 0, 0 );
-	if ( error ) return error;
-	this->CopyBoundaries ( &stroke, &exterior );
+	if ( outside ) {
+		this->StrokeBoundaries ( &exterior, &outline, exteriorWidth, true, false );
+		error = exterior.Tesselate ( TESS_WINDING_NONZERO, TESS_BOUNDARY_CONTOURS, 0, 0 );
+		if ( error ) return error;
+		this->CopyBoundaries ( &stroke, &exterior );
+	}
 	
-	this->StrokeBoundaries ( &interior, &outline, interiorWidth, false, false );
-	error = interior.Tesselate ( TESS_WINDING_NONZERO, TESS_BOUNDARY_CONTOURS, 0, 0 );
-	if ( error ) return error;
-	this->CopyBoundaries ( &stroke, &interior );
+	if ( inside ) {
+		this->StrokeBoundaries ( &interior, &outline, interiorWidth, false, false );
+		error = interior.Tesselate ( TESS_WINDING_NONZERO, TESS_BOUNDARY_CONTOURS, 0, 0 );
+		if ( error ) return error;
+		this->CopyBoundaries ( &stroke, &interior );
+	}
 	
 	error = stroke.Tesselate ( TESS_WINDING_ODD, TESS_BOUNDARY_CONTOURS, 0, 0 );
 	if ( error ) return error;
@@ -77,15 +81,6 @@ bool MOAIVectorShape::CanGroup () {
 }
 
 //----------------------------------------------------------------//
-void MOAIVectorShape::CopyAndTransformVertices ( ZLVec2D* vertices, const ZLAffine2D& transform, const ZLVec2D* src, u32 total ) {
-
-	for ( u32 i = 0; i < total; ++i ) {
-		vertices [ i ] = src [ i ];
-		transform.Transform ( vertices [ i ]);
-	}
-}
-
-//----------------------------------------------------------------//
 void MOAIVectorShape::CopyBoundaries ( SafeTesselator* dest, SafeTesselator* src ) {
 
 	const float* verts = tessGetVertices ( src->mTess );
@@ -95,7 +90,7 @@ void MOAIVectorShape::CopyBoundaries ( SafeTesselator* dest, SafeTesselator* src
 	for ( int i = 0; i < nelems; ++i ) {
 		int b = elems [( i * 2 )];
 		int n = elems [( i * 2 ) + 1 ];
-		tessAddContour ( dest->mTess, 2, &verts [ b * 2 ], sizeof ( float ) * 2, n );
+		dest->AddContour ( 2, &verts [ b * 2 ], sizeof ( float ) * 2, n );
 	}
 }
 
@@ -129,7 +124,7 @@ void MOAIVectorShape::Stroke ( SafeTesselator* tess, const ZLVec2D* verts, int n
 	MOAIVectorLineJoin* joins = ( MOAIVectorLineJoin* )alloca ( sizeof ( MOAIVectorLineJoin ) * nVerts );
 	MOAIVectorUtil::ComputeLineJoins ( joins, verts, nVerts, false, forward, interior );
 	
-	bool exact = interior ? ( this->mStyle.mStrokeStyle == MOAIVectorStyle::STROKE_EXTERIOR ) : ( this->mStyle.mStrokeStyle == MOAIVectorStyle::STROKE_INTERIOR );
+	bool exact = interior ? ( this->mStyle.mStrokeStyle == MOAIVectorStyle::STROKE_EXTERIOR ) : ( this->mStyle.mStrokeStyle == MOAIVectorStyle::STROKE_INTERIOR ); // TODO: exact = width == 0.0f;
 	
 	int contourVerts = MOAIVectorUtil::StrokeLine ( this->mStyle, 0, joins, nVerts, width, exact );
 	ZLVec2D* contour = ( ZLVec2D* )alloca ( sizeof ( ZLVec2D ) * contourVerts );
@@ -156,15 +151,47 @@ void MOAIVectorShape::StrokeBoundaries ( SafeTesselator* tess, SafeTesselator* o
 }
 
 //----------------------------------------------------------------//
-int MOAIVectorShape::Tesselate ( MOAIVectorTesselator& drawing ) {
+int MOAIVectorShape::Tesselate ( MOAIVectorTesselator& drawing, SafeTesselator* tess ) {
+
+	assert ( tess );
+	
+	int error = 0;
+	
+	if ( this->mStyle.GetFillStyle () == MOAIVectorStyle::FILL_SOLID ) {
+		error = this->AddFillContours ( tess );
+		if ( error ) return error;
+	}
+	
+	if (( this->mStyle.GetStrokeStyle () != MOAIVectorStyle::STROKE_NONE ) && ( this->mStyle.GetStrokeWidth () > 0.0f )) {
+		error = this->AddStrokeContours ( tess, true, true );
+		if ( error ) return error;
+	}
+	
+	return error;
+}
+
+//----------------------------------------------------------------//
+int MOAIVectorShape::Tesselate ( MOAIVectorTesselator& drawing, ZLStream* vtxStream, ZLStream* idxStream, MOAIVertexFormat* format ) {
+	
+	assert ( vtxStream );
 	
 	u32 fillExtraID = this->mStyle.GetFillExtraID ();
 	u32 strokeExtraID = this->mStyle.GetStrokeExtraID ();
 	int error = 0;
 	
-	if ( this->mStyle.GetFillStyle () == MOAIVectorStyle::FILL_SOLID ) {
+	bool isExtruded		= this->mStyle.GetExtrude () > 0.0f;
+	bool isStroked		= ( this->mStyle.GetStrokeStyle () != MOAIVectorStyle::STROKE_NONE ) && ( this->mStyle.GetStrokeWidth () > 0.0f );
+	bool isFilled		= this->mStyle.GetFillStyle () == MOAIVectorStyle::FILL_SOLID;
+	bool isClosed		= this->IsClosed ();
 	
-		if ( this->mStyle.GetExtrude () > 0.0f ) {
+	// fill solid w/ stroke
+	// fill solid w/o stroke
+	// no fill, just stroke
+	
+	if ( isFilled ) {
+	
+		// only draw the skirt if we are *not* stroked
+		if ( isExtruded && !isStroked ) {
 			
 			SafeTesselator skirt;
 			
@@ -174,7 +201,7 @@ int MOAIVectorShape::Tesselate ( MOAIVectorTesselator& drawing ) {
 			error = skirt.Tesselate (( int )this->mStyle.mWindingRule, TESS_BOUNDARY_CONTOURS, NVP, 2 );
 			if ( error ) return error;
 			
-			drawing.WriteSkirt ( &skirt, this->mStyle, this->mStyle.GetFillColor (), fillExtraID );
+			drawing.WriteSkirt ( &skirt, vtxStream, idxStream, format, this->mStyle, this->mStyle.GetFillColor (), fillExtraID );
 		}
 		
 		SafeTesselator triangles;
@@ -185,48 +212,37 @@ int MOAIVectorShape::Tesselate ( MOAIVectorTesselator& drawing ) {
 		error = triangles.Tesselate (( int )this->mStyle.mWindingRule, TESS_POLYGONS, NVP, 2 );
 		if ( error ) return error;
 		
-		drawing.WriteTriangleIndices ( &triangles, drawing.CountVertices ());
-		drawing.WriteVertices ( &triangles, this->mStyle.GetExtrude (), this->mStyle.mFillColor.PackRGBA (), fillExtraID );
+		if ( vtxStream && idxStream ) {
+			drawing.WriteTriangles ( &triangles, vtxStream, idxStream, format, this->mStyle, this->mStyle.GetExtrude () + this->mStyle.GetZOffset (), this->mStyle.mFillColor.PackRGBA (), fillExtraID );
+		}
 	}
 	
-	if (( this->mStyle.GetStrokeStyle () != MOAIVectorStyle::STROKE_NONE ) && ( this->mStyle.GetStrokeWidth () > 0.0f )) {
+	if ( isStroked ) {
 		
-		if ( this->mStyle.GetExtrude () > 0.0f ) {
+		if ( isExtruded ) {
 			
 			SafeTesselator skirt;
 			
-			error = this->AddStrokeContours ( &skirt );
+			// only add the interior skirt we are *not* filled
+			error = this->AddStrokeContours ( &skirt, !isFilled, true );
 			if ( error ) return error;
 			
 			error = skirt.Tesselate (( int )this->mStyle.mWindingRule, TESS_BOUNDARY_CONTOURS, NVP, 2 );
 			if ( error ) return error;
 			
-			drawing.WriteSkirt ( &skirt, this->mStyle, this->mStyle.GetStrokeColor (), strokeExtraID );
+			drawing.WriteSkirt ( &skirt, vtxStream, idxStream, format, this->mStyle, this->mStyle.GetStrokeColor (), strokeExtraID );
 		}
 		
 		SafeTesselator triangles;
 		
-		error = this->AddStrokeContours ( &triangles );
+		error = this->AddStrokeContours ( &triangles, true, true );
 		if ( error ) return error;
 		
 		error = triangles.Tesselate ( TESS_WINDING_NONZERO, TESS_POLYGONS, NVP, 2 );
 		if ( error ) return error;
 		
-		drawing.WriteTriangleIndices ( &triangles, drawing.CountVertices ());
-		drawing.WriteVertices ( &triangles, this->mStyle.GetExtrude (), this->mStyle.mStrokeColor.PackRGBA (), strokeExtraID );
-	}
-	
-	SafeTesselator* maskTesselator = drawing.GetMaskTesselator ();
-	if ( maskTesselator ) {
-	
-		if ( this->mStyle.GetFillStyle () == MOAIVectorStyle::FILL_SOLID ) {
-			error = this->AddFillContours ( maskTesselator );
-			if ( error ) return error;
-		}
-		
-		if (( this->mStyle.GetStrokeStyle () != MOAIVectorStyle::STROKE_NONE ) && ( this->mStyle.GetStrokeWidth () > 0.0f )) {
-			error = this->AddStrokeContours ( maskTesselator );
-			if ( error ) return error;
+		if ( vtxStream && idxStream ) {
+			drawing.WriteTriangles ( &triangles, vtxStream, idxStream, format, this->mStyle, this->mStyle.GetExtrude () + this->mStyle.GetZOffset (), this->mStyle.mStrokeColor.PackRGBA (), strokeExtraID );
 		}
 	}
 	

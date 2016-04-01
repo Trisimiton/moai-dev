@@ -6,6 +6,13 @@
 
 #include <zl-gfx/pch.h>
 
+// hardware PVR support is based on device
+#ifdef MOAI_OS_IPHONE
+	#define ZGL_DEVCAPS_PVR_TEXTURE 1
+#else
+	#define ZGL_DEVCAPS_PVR_TEXTURE 0
+#endif
+
 //================================================================//
 // gfx
 //================================================================//
@@ -223,6 +230,8 @@ enum {
 	ZGL_CLEAR_STENCIL_BUFFER_BIT	= 0x04,
 };
 
+#define ZGL_INVALID_UNIFORM_ADDR (( u32 )-1 )
+
 //----------------------------------------------------------------//
 extern u32 zglMapFromGLEnum( u32 glEnum ); // don't do this; this should be local to the OpenGL implementation
 
@@ -321,6 +330,7 @@ extern void		zglRenderbufferStorage			( u32 internalFormat, u32 width, u32 heigh
 //----------------------------------------------------------------//
 extern void		zglBindBuffer					( u32 target, u32 buffer );
 extern void		zglBufferData					( u32 target, u32 size, const void* data, u32 usage );
+extern void		zglBufferSubData				( u32 target, u32 offset, u32 size, const void* data );
 extern u32		zglCreateBuffer					();
 extern void*	zglMapBuffer					( u32 target );
 extern void		zglUnmapBuffer					( u32 target );

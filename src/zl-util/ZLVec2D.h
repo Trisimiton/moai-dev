@@ -84,13 +84,27 @@ public:
 	}
 	
 	//----------------------------------------------------------------//
+	static TYPE Cross ( const ZLMetaVec2D < TYPE >& v0, const ZLMetaVec2D < TYPE >& v1 ) {
+	
+		return ( v0.mX * v1.mY ) - ( v0.mY * v1.mX );
+	}
+	
+	//----------------------------------------------------------------//
+	bool Compare ( const ZLMetaVec2D < TYPE >& point ) {
+	
+		if (( mX != point.mX ) || ( mY != point.mY )) return false;
+
+		return true;
+	}
+	
+	//----------------------------------------------------------------//
 	// Is V within res of point?
 	bool Compare ( const ZLMetaVec2D < TYPE >& point, TYPE res ) {
 	
-		if ((( mX <= ( point.mX + res )) && ( mX >= ( point.mX - res ))) &&
-			(( mY <= ( point.mY + res )) && ( mY >= ( point.mY - res )))) return true;
+		if ((( mX < ( point.mX - res )) || ( mX > ( point.mX + res ))) ||
+			(( mY < ( point.mY - res )) || ( mY > ( point.mY + res )))) return false;
 
-		return false;
+		return true;
 	}
 	
 	//----------------------------------------------------------------//
@@ -116,7 +130,7 @@ public:
 	}
 	
 	//----------------------------------------------------------------//
-	float Dist ( const ZLMetaVec2D < TYPE >& point ) {
+	TYPE Dist ( const ZLMetaVec2D < TYPE >& point ) {
 		
 		TYPE x = this->mX - point.mX;
 		TYPE y = this->mY - point.mY;
@@ -125,7 +139,7 @@ public:
 	}
 	
 	//----------------------------------------------------------------//
-	float DistSqrd ( const ZLMetaVec2D < TYPE >& point ) const {
+	TYPE DistSqrd ( const ZLMetaVec2D < TYPE >& point ) const {
 	
 		TYPE x = this->mX - point.mX;
 		TYPE y = this->mY - point.mY;
@@ -135,8 +149,15 @@ public:
 	
 	//----------------------------------------------------------------//
 	// V . point
-	float Dot ( const ZLMetaVec2D < TYPE >& point ) const {
+	TYPE Dot ( const ZLMetaVec2D < TYPE >& point ) const {
+	
 		return ( mX * point.mX ) + ( mY * point.mY );
+	}
+	
+	//----------------------------------------------------------------//
+	static TYPE Dot ( const ZLMetaVec2D < TYPE >& v0, const ZLMetaVec2D < TYPE >& v1 ) {
+	
+		return ( v0.mX * v1.mX ) + ( v0.mY * v1.mY );
 	}
 	
 	//----------------------------------------------------------------//
@@ -310,7 +331,12 @@ public:
 	// angle between vectors in radians
 	float Radians ( const ZLMetaVec2D < TYPE >& v ) const {
 		
-		return ACos ( this->Dot ( v ));
+		float dot = this->Dot ( v );
+		
+		if ( dot <= -1.0f ) return ( float )PI;
+		if ( dot >= 1.0f ) return 0.0f;
+		
+		return ACos ( dot );
 	}
 	
 	//----------------------------------------------------------------//

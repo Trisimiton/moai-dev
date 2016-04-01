@@ -248,7 +248,7 @@ int MOAIBox2DBody::_addRect ( lua_State* L ) {
 	
 	@in		MOAIBox2DBody self
 	@in		number angularImpulse	in kg * units / s, converted to kg * m / s
-	@opt	boolean wake wake this body. Default is true
+	@opt	boolean wake			wake this body. Default is true
 	@out	nil
 */
 int MOAIBox2DBody::_applyAngularImpulse ( lua_State* L ) {
@@ -276,7 +276,7 @@ int MOAIBox2DBody::_applyAngularImpulse ( lua_State* L ) {
 	@in		number forceY	in kg * units / s^2, converted to N [kg * m / s^2]
 	@opt	number pointX	in units, world coordinates, converted to meters
 	@opt	number pointY	in units, world coordinates, converted to meters
-	@opt	boolean wake wake this body. Default is true
+	@opt	boolean wake	wake this body. Default is true
 	@out	nil
 */
 int MOAIBox2DBody::_applyForce ( lua_State* L ) {
@@ -312,7 +312,7 @@ int MOAIBox2DBody::_applyForce ( lua_State* L ) {
 	@in		number impulseY	in kg * units / s, converted to kg * m / s
 	@opt	number pointX	in units, world coordinates, converted to meters
 	@opt	number pointY	in units, world coordinates, converted to meters
-	@opt	boolean wake wake this body. Default is true
+	@opt	boolean wake	wake this body. Default is true
 	@out	nil
 */
 int MOAIBox2DBody::_applyLinearImpulse ( lua_State* L ) {
@@ -344,7 +344,7 @@ int MOAIBox2DBody::_applyLinearImpulse ( lua_State* L ) {
 	
 	@in		MOAIBox2DBody self
 	@opt	number torque	in (kg * units / s^2) * units, converted to N-m. Default value is 0.
-	@opt	boolean wake wake this body. Default is true
+	@opt	boolean wake	wake this body. Default is true
 	@out	nil
 */
 int MOAIBox2DBody::_applyTorque ( lua_State* L ) {
@@ -423,6 +423,41 @@ int MOAIBox2DBody::_getAngularVelocity ( lua_State* L ) {
 	float omega = self->mBody->GetAngularVelocity () * ( float )R2D;
 	lua_pushnumber ( state, omega );
 	return 1;
+}
+
+//----------------------------------------------------------------//
+/**	@lua	getContactList
+	@text	Returns list of MOAIBox2DBody that are in contact with this body
+	
+	@in		MOAIBox2DBody self
+	@in 	boolean	touching
+	@out	... bodies
+*/
+int MOAIBox2DBody::_getContactList ( lua_State* L ) {
+	MOAI_LUA_SETUP ( MOAIBox2DBody, "U" )
+	
+	b2Body* body = self->mBody;
+	if ( !body ) {
+		MOAILog ( state, MOAILogMessages::MOAIBox2DBody_MissingInstance );
+		return 0;
+	}
+	
+	bool touching = state.GetValue < bool >( 2, false );
+
+	u32 total = 0;
+	for ( b2ContactEdge* ce = body->GetContactList (); ce != NULL; ce = ce->next ) {
+
+		if ( !touching || ce->contact->IsTouching () ) {
+			MOAIBox2DBody* moaiBody = ( MOAIBox2DBody* )ce->other->GetUserData ();
+			if ( moaiBody ) {
+				lua_checkstack ( L, 2 );
+				total++;
+				moaiBody->PushLuaUserdata ( state );
+			}
+		}
+	}
+
+	return total;
 }
 
 //----------------------------------------------------------------//
@@ -1000,6 +1035,40 @@ int MOAIBox2DBody::_setType ( lua_State* L ) {
 //================================================================//
 
 //----------------------------------------------------------------//
+bool MOAIBox2DBody::ApplyAttrOp ( u32 attrID, MOAIAttrOp& attrOp, u32 op ) {
+	// TODO: these values may need to be cached for performance reasons
+	if ( MOAITransform::MOAITransformAttr::Check ( attrID )) {
+		const b2Transform & xform = mBody->GetTransform();
+		
+		switch ( UNPACK_ATTR ( attrID )) {
+			case MOAITransform::ATTR_X_LOC: {
+				float x = attrOp.Apply ( xform.p.x, op, MOAIAttrOp::ATTR_READ_WRITE, MOAIAttrOp::ATTR_TYPE_FLOAT ) * this->GetUnitsToMeters ();
+				mBody->SetTransform ( b2Vec2( x, xform.p.y), xform.q.GetAngle() );
+				return true;
+			}
+				
+			case MOAITransform::ATTR_Y_LOC: {
+				float y = attrOp.Apply ( xform.p.y, op, MOAIAttrOp::ATTR_READ_WRITE, MOAIAttrOp::ATTR_TYPE_FLOAT ) * this->GetUnitsToMeters ();
+				mBody->SetTransform ( b2Vec2( xform.p.x, y ), xform.q.GetAngle() );
+				return true;
+			}
+				
+			case MOAITransform::ATTR_Z_ROT: {
+				float angle = attrOp.Apply ( xform.q.GetAngle(), op, MOAIAttrOp::ATTR_READ_WRITE, MOAIAttrOp::ATTR_TYPE_FLOAT );
+				mBody->SetTransform ( xform.p,  ( float )((angle * D2R) + M_PI_4 ));
+				return true;
+			}
+		}
+	}
+	return MOAITransformBase::ApplyAttrOp (attrID, attrOp, op );
+}
+
+//----------------------------------------------------------------//
+void MOAIBox2DBody::BuildLocalToWorldMtx ( ZLAffine3D& localToWorldMtx ) {
+	UNUSED ( localToWorldMtx );
+}
+
+//----------------------------------------------------------------//
 void MOAIBox2DBody::Destroy () {
 
 	b2World* world = this->mWorld->mWorld;
@@ -1071,6 +1140,7 @@ void MOAIBox2DBody::RegisterLuaFuncs ( MOAILuaState& state ) {
 		{ "destroy",				_destroy },
 		{ "getAngle",				_getAngle },
 		{ "getAngularVelocity",		_getAngularVelocity },
+		{ "getContactList",			_getContactList },
 		{ "getInertia",				_getInertia },
 		{ "getGravityScale",		_getGravityScale },
 		{ "getLinearVelocity",		_getLinearVelocity },
@@ -1099,37 +1169,6 @@ void MOAIBox2DBody::RegisterLuaFuncs ( MOAILuaState& state ) {
 	};
 	
 	luaL_register ( state, 0, regTable );
-}
-
-//----------------------------------------------------------------//
-bool MOAIBox2DBody::ApplyAttrOp ( u32 attrID, MOAIAttrOp& attrOp, u32 op ) {
-	// TODO: these values may need to be cached for performance reasons
-	if ( MOAITransform::MOAITransformAttr::Check ( attrID )) {
-		const b2Transform & xform = mBody->GetTransform();
-		
-		switch ( UNPACK_ATTR ( attrID )) {
-			case MOAITransform::ATTR_X_LOC: {
-				float x = attrOp.Apply ( xform.p.x, op, MOAIAttrOp::ATTR_READ_WRITE, MOAIAttrOp::ATTR_TYPE_FLOAT ) * this->GetUnitsToMeters ();
-				mBody->SetTransform ( b2Vec2( x, xform.p.y), xform.q.GetAngle() );
-				return true;
-			}
-
-			case MOAITransform::ATTR_Y_LOC: {
-				float y = attrOp.Apply ( xform.p.y, op, MOAIAttrOp::ATTR_READ_WRITE, MOAIAttrOp::ATTR_TYPE_FLOAT ) * this->GetUnitsToMeters ();
-				mBody->SetTransform ( b2Vec2( xform.p.x, y ), xform.q.GetAngle() );
-				return true;	
-			}
-
-			case MOAITransform::ATTR_Z_ROT: {
-				float angle = attrOp.Apply ( xform.q.GetAngle(), op, MOAIAttrOp::ATTR_READ_WRITE, MOAIAttrOp::ATTR_TYPE_FLOAT );				
-				mBody->SetTransform ( xform.p,  ( float )((angle * D2R) + M_PI_4 ));
-				return true;	
-			}
-
-
-		}
-	}
-	return MOAITransformBase::ApplyAttrOp (attrID, attrOp, op );
 }
 
 //----------------------------------------------------------------//

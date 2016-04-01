@@ -4,8 +4,6 @@
 #ifndef	MOAICHARTBOOSTANDROID_H
 #define	MOAICHARTBOOSTANDROID_H
 
-#ifndef DISABLE_CHARTBOOST
-
 #include <moai-core/headers.h>
 #include <moai-android/JniUtils.h>
 
@@ -39,7 +37,5 @@ public:
 		void 			NotifyInterstitialLoadFailed	();
 		void			RegisterLuaClass				( MOAILuaState& state );
 };
-
-#endif  //DISABLE_CHARTBOOST
 
 #endif  //MOAICHARTBOOST_H

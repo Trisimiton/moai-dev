@@ -193,18 +193,20 @@ onGroup = function ( text, attributes, style )
 
 		if drawing and drawing:finish () then
 
-			local vtxBuffer = MOAIVertexBuffer.new ()
-			local idxBuffer = MOAIIndexBuffer.new ()
+			local vtxFormat = MOAIVertexFormatMgr.getFormat ( MOAIVertexFormatMgr.XYZC )
 
-			drawing:getTriangles ( vtxBuffer, idxBuffer );
+			local vtxBuffer = MOAIGfxBuffer.new ()
+			local idxBuffer = MOAIGfxBuffer.new ()
 
-			vtxBuffer:setFormat ( MOAIVertexFormatMgr.getFormat ( MOAIVertexFormatMgr.XYZC ))
-			vtxBuffer:bless ()
+			local totalElements = drawing:tesselate ( vtxBuffer, idxBuffer, 2 )
 
 			local mesh = MOAIMesh.new ()
-			mesh:setVertexBuffer ( vtxBuffer )
-			mesh:setIndexBuffer ( idxBuffer )
+			mesh:setVertexBuffer ( vtxBuffer, vtxFormat )
+			mesh:setIndexBuffer ( idxBuffer, 2 )
+			mesh:setPrimType ( MOAIMesh.GL_TRIANGLES )
 			mesh:setShader ( MOAIShaderMgr.getShader ( MOAIShaderMgr.LINE_SHADER_3D ))
+			mesh:setTotalElements ( totalElements )
+			mesh:setBounds ( vtxBuffer:computeBounds ( vtxFormat ))
 
 			local prop = MOAIProp.new ()
 			prop:setDeck ( mesh )

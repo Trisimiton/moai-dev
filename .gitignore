@@ -1,3 +1,7 @@
+obj/
+libs/
+util/libmoai
+
 Thumbs.db
 .DS_Store
 /vs2010/ipch
@@ -8,8 +12,6 @@ Thumbs.db
 /ide/obj
 
 /src/config
-
-lib/
 
 build/
 xcuserdata/
@@ -35,3 +37,5 @@ cmake/projects/
 
 bin/api-reference-parser/vendor
 docs/api-reference
+moai-sdk/
+/lib/

@@ -124,11 +124,14 @@ void MOAIGfxResourceMgr::PurgeResources ( u32 age ) {
 //----------------------------------------------------------------//
 void MOAIGfxResourceMgr::PushDeleter ( u32 type, u32 id ) {
 
-	MOAIGfxDeleter deleter;
-	deleter.mType = type;
-	deleter.mResourceID = id;
+	if ( id ) {
 	
-	this->mDeleterStack.Push ( deleter );
+		MOAIGfxDeleter deleter;
+		deleter.mType = type;
+		deleter.mResourceID = id;
+		
+		this->mDeleterStack.Push ( deleter );
+	}
 }
 
 //----------------------------------------------------------------//
@@ -180,6 +183,11 @@ void MOAIGfxResourceMgr::Update () {
 	zglBegin ();
 	
 	u32 top = this->mDeleterStack.GetTop ();
+	
+	if ( top ) {
+		zglFlush ();
+	}
+	
 	for ( u32 i = 0; i < top; ++i ) {
 		MOAIGfxDeleter& deleter = this->mDeleterStack [ i ];
 		deleter.Delete ();
